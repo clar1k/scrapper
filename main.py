@@ -1,13 +1,14 @@
-from pprint import pprint
-from fastapi import FastAPI
+import re
+from typing import List
+
 import bs4
 import requests
-from icecream import ic
-from pydantic import BaseModel
-import re
 import uvicorn
-from database import db
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
+from database import db
 
 app = FastAPI(debug=True, title="Hackathon API")
 
@@ -18,6 +19,15 @@ class HackathonPost(BaseModel):
     date: str
     image_url: str
     link: str
+
+    def to_dict(self):
+        return {
+            "title": self.title,
+            "description": self.description,
+            "date": self.date,
+            "image_url": self.image_url,
+            "link": self.link,
+        }
 
 
 def parse_dou() -> list[HackathonPost] or None:
@@ -66,12 +76,23 @@ def parse_dou() -> list[HackathonPost] or None:
     return hackathon_posts
 
 
-@app.get("/hackathons", response_model=list[HackathonPost])
+@app.get("/hackathons", response_model=List[HackathonPost])
 def current_hackathons():
-    hackathons = parse_dou()
-    for hackathon in hackathons:
-        ic(hackathon)
-    return hackathons
+    current_hackathons = parse_dou()
+    new_hackathons = []
+    for hackathon in current_hackathons:
+        hackathon_found = db.hackathons.find_one({"title": hackathon.title})
+        print(hackathon_found)
+        if hackathon_found:
+            continue
+
+        db.hackathons.insert_one(hackathon.to_dict())
+        new_hackathons.append(hackathon)
+
+    if len(new_hackathons) == 0:
+        return JSONResponse({"msg": "No new hackathons"}, 400)
+
+    return JSONResponse(new_hackathons, 200)
 
 
 if __name__ == "__main__":
